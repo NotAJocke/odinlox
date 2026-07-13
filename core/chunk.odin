@@ -4,6 +4,11 @@ import "core:fmt"
 
 OpCode :: enum u8 {
 	CONSTANT,
+	NEGATE,
+	ADD,
+	SUBTRACT,
+	MULTIPLY,
+	DIVIDE,
 	RETURN,
 }
 
@@ -71,9 +76,20 @@ disassemble_instruction :: proc(c: ^Chunk, offset: int) -> int {
 		return simple_instruction("OP_RETURN", offset)
 	case .CONSTANT:
 		return constant_instruction("OP_CONSTANT", c, offset)
+	case .NEGATE:
+		return simple_instruction("OP_NEGATE", offset)
 	case:
 		fmt.printfln("Unknown OpCode %d\n", instruction)
 		unreachable()
+	case .ADD:
+		return simple_instruction("OP_ADD", offset)
+	case .SUBTRACT:
+		return simple_instruction("OP_SUBSTRACT", offset)
+	case .MULTIPLY:
+		return simple_instruction("OP_MULTIPLY", offset)
+	case .DIVIDE:
+		return simple_instruction("OP_DIVIDE", offset)
+
 	}
 
 	return 0

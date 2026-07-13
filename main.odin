@@ -27,14 +27,35 @@ main :: proc() {
 
 	using core
 
+	vm := new_vm(ODIN_DEBUG)
+
 	chunk := new_chunk()
 
 	constant := add_constant(&chunk, 1.2)
-	fmt.printfln("c = %v", constant)
 	write_chunk(&chunk, OpCode.CONSTANT, 123)
 	write_chunk(&chunk, u8(constant), 123)
+
+
+	constant = add_constant(&chunk, 3.4)
+	write_chunk(&chunk, OpCode.CONSTANT, 123)
+	write_chunk(&chunk, u8(constant), 123)
+
+	write_chunk(&chunk, OpCode.ADD, 123)
+
+	constant = add_constant(&chunk, 5.6)
+	write_chunk(&chunk, OpCode.CONSTANT, 123)
+	write_chunk(&chunk, u8(constant), 123)
+
+	write_chunk(&chunk, OpCode.DIVIDE, 123)
+
+
+	write_chunk(&chunk, OpCode.NEGATE, 123)
 	write_chunk(&chunk, OpCode.RETURN, 123)
 	disassemble_chunk(&chunk, "test chunk")
+
+	interpret(&vm, &chunk)
+
 	free_chunk(&chunk)
+	free_vm()
 }
 
