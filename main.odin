@@ -2,6 +2,9 @@
 
 package main
 
+import "core:bufio"
+import "core:os"
+import "core:strconv"
 
 import "core:fmt"
 import "core:mem"
@@ -28,34 +31,51 @@ main :: proc() {
 	using core
 
 	vm := new_vm(ODIN_DEBUG)
+	args := os.args
 
-	chunk := new_chunk()
+	if len(args) == 1 {
+		repl(&vm)
+	} else if len(args) == 2 {
+		run_file(&vm, args[1])
+	} else {
+		fmt.eprintfln("Usage: odinlox [path]")
+		os.exit(1)
+	}
 
-	constant := add_constant(&chunk, 1.2)
-	write_chunk(&chunk, OpCode.CONSTANT, 123)
-	write_chunk(&chunk, u8(constant), 123)
-
-
-	constant = add_constant(&chunk, 3.4)
-	write_chunk(&chunk, OpCode.CONSTANT, 123)
-	write_chunk(&chunk, u8(constant), 123)
-
-	write_chunk(&chunk, OpCode.ADD, 123)
-
-	constant = add_constant(&chunk, 5.6)
-	write_chunk(&chunk, OpCode.CONSTANT, 123)
-	write_chunk(&chunk, u8(constant), 123)
-
-	write_chunk(&chunk, OpCode.DIVIDE, 123)
-
-
-	write_chunk(&chunk, OpCode.NEGATE, 123)
-	write_chunk(&chunk, OpCode.RETURN, 123)
-	disassemble_chunk(&chunk, "test chunk")
-
-	interpret(&vm, &chunk)
-
-	free_chunk(&chunk)
 	free_vm()
 }
+
+@(private)
+repl :: proc(vm: ^core.VM) {
+	using core
+
+	buf: [1024]u8
+
+	for {
+		read, _ := os.read(os.stdin, buf[:])
+		if read > 0 {
+
+			interpret(vm, string(buf[:]))
+		}
+	}
+
+}
+
+@(private)
+run_file :: proc(vm: ^core.VM, path: string) {
+	using core
+
+	data, err := os.read_entire_file_from_path(path, context.temp_allocator)
+
+	if err != nil {
+		fmt.eprintfln("Error reading file '%v'", path)
+	}
+
+	result := interpret(vm, string(data))
+
+	free_all(context.temp_allocator)
+
+	if result != .Ok {
+		os.exit(1)
+	}}
 

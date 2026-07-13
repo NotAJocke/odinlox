@@ -22,8 +22,9 @@ new_vm :: proc(debug: bool) -> VM {
 
 free_vm :: proc() {}
 
-interpret :: proc(vm: ^VM, chunk: ^Chunk) -> InterpretResult {
-	vm.chunk = chunk
+interpret :: proc(vm: ^VM, source: string) -> InterpretResult {
+	compile(source)
+	// vm.chunk = chunk
 	vm.ip = 0
 
 
@@ -84,7 +85,7 @@ read_constant :: proc(vm: ^VM) -> Value {
 
 @(private)
 reset_stack :: proc(vm: ^VM) {
-	vm.stack = [dynamic; STACK_MAX]Value{}
+	clear(&vm.stack)
 }
 
 @(private)
