@@ -18,12 +18,15 @@ Chunk :: struct {
 	lines:     [dynamic]int,
 }
 
-new_chunk :: proc() -> Chunk {
-	return Chunk {
-		code = make([dynamic]u8),
-		constants = make([dynamic]Value),
-		lines = make([dynamic]int),
-	}
+OpCodeByte :: union {
+	OpCode,
+	byte,
+}
+
+init_chunk :: proc(c: ^Chunk) {
+	c.code = make([dynamic]u8)
+	c.constants = make([dynamic]Value)
+	c.lines = make([dynamic]int)
 }
 
 free_chunk :: proc(c: ^Chunk) {
@@ -33,19 +36,34 @@ free_chunk :: proc(c: ^Chunk) {
 }
 
 
-write_chunk_code :: proc(c: ^Chunk, byte: OpCode, line: int) {
-	write_chunk_byte(c, u8(byte), line)
-}
+//TODO: clean this up
+// write_chunk_code :: proc(c: ^Chunk, byte: OpCode, line: int) {
+// 	write_chunk_byte(c, u8(byte), line)
+// }
 
-write_chunk_byte :: proc(c: ^Chunk, byte: u8, line: int) {
-	append(&c.code, byte)
+// write_chunk_byte :: proc(c: ^Chunk, byte: u8, line: int) {
+// 	append(&c.code, byte)
+// 	append(&c.lines, line)
+// }
+
+write_chunk :: proc(c: ^Chunk, opCodeByte: OpCodeByte, line: int) {
+	b: byte
+
+	switch ocb in opCodeByte {
+	case byte:
+		b = ocb
+	case OpCode:
+		b = u8(ocb)
+	}
+
+	append(&c.code, b)
 	append(&c.lines, line)
 }
 
-write_chunk :: proc {
-	write_chunk_byte,
-	write_chunk_code,
-}
+// write_chunk :: proc {
+// 	write_chunk_byte,
+// 	write_chunk_code,
+// }
 
 add_constant :: proc(c: ^Chunk, value: Value) -> int {
 	append(&c.constants, value)

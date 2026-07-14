@@ -23,12 +23,23 @@ new_vm :: proc(debug: bool) -> VM {
 free_vm :: proc() {}
 
 interpret :: proc(vm: ^VM, source: string) -> InterpretResult {
-	compile(source)
-	// vm.chunk = chunk
+	chunk: Chunk
+	init_chunk(&chunk)
+
+	r := compile(source, &chunk)
+	if r != .Ok {
+		free_chunk(&chunk)
+		return r
+	}
+
+	vm.chunk = &chunk
 	vm.ip = 0
 
+	result := run(vm)
 
-	return run(vm)
+	free_chunk(&chunk)
+
+	return result
 }
 
 @(private)

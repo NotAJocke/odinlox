@@ -2,9 +2,7 @@
 
 package main
 
-import "core:bufio"
 import "core:os"
-import "core:strconv"
 
 import "core:fmt"
 import "core:mem"
@@ -52,10 +50,11 @@ repl :: proc(vm: ^core.VM) {
 	buf: [1024]u8
 
 	for {
+		fmt.print("> ")
 		read, _ := os.read(os.stdin, buf[:])
 		if read > 0 {
 
-			interpret(vm, string(buf[:]))
+			interpret(vm, string(buf[:read]))
 		}
 	}
 

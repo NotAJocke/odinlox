@@ -156,7 +156,7 @@ error_token :: proc(s: ^Scanner, message: string) -> Token {
 	}
 }
 
-@(private)
+@(private = "file")
 advance :: proc(s: ^Scanner) -> rune {
 	s.current += 1
 	return rune(s.source[s.current - 1])
@@ -206,12 +206,14 @@ skip_whitespace :: proc(s: ^Scanner) {
 
 @(private)
 peek :: proc(s: ^Scanner) -> rune {
+	if is_at_end(s) {return cast(rune)0}
 	return rune(s.source[s.current])
 }
 
 @(private)
 peek_next :: proc(s: ^Scanner) -> Maybe(rune) {
 	if is_at_end(s) {return nil}
+	if s.current + 1 >= len(s.source) {return nil}
 	return rune(s.source[s.current + 1])
 }
 

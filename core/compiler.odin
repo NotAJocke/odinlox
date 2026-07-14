@@ -1,13 +1,284 @@
 package core
 
-compile :: proc(source: string) {
+import "core:fmt"
+import "core:strconv"
+
+compile :: proc(source: string, chunk: ^Chunk) -> InterpretResult {
 	scanner: Scanner
 	scanner_init(&scanner, source)
 
-	line := -1
+	parser: Parser
+	parser_init(&parser, &scanner, chunk)
+
+	advance(&parser)
+	expression(&parser)
+	consume(&parser, .EOF, "Expect end of expression.")
+
+	compiler_end(&parser)
+
+	if parser.had_error {
+		return .CompileError
+	}
+
+	return .Ok
+}
+
+Precedence :: enum {
+	NONE,
+	ASSIGNMENT, // =
+	OR, // or
+	AND, // and
+	EQUALITY, // == !=
+	COMPARISON, // < > <= >=
+	TERM, // + -
+	FACTOR, // * /
+	UNARY, // ! -
+	CALL, // . ()
+	PRIMARY,
+}
+
+@(private = "file")
+next_precedence :: proc(prec: Precedence) -> Precedence {
+	#partial switch prec {
+	case .NONE:
+		return .ASSIGNMENT
+	case .ASSIGNMENT:
+		return .OR
+	case .OR:
+		return .AND
+	case .AND:
+		return .EQUALITY
+	case .EQUALITY:
+		return .COMPARISON
+	case .COMPARISON:
+		return .TERM
+	case .TERM:
+		return .FACTOR
+	case .FACTOR:
+		return .UNARY
+	case .UNARY:
+		return .CALL
+	case .CALL:
+		return .PRIMARY
+	case .PRIMARY:
+		return .NONE
+	}
+
+	return .NONE
+}
+
+@(private = "file")
+parse_precedence :: proc(p: ^Parser, precedence: Precedence) {
+	advance(p)
+	prefix_rule := get_rule(p.previous.type).prefix
+
+	if prefix_rule == nil {
+		error(p, "Expect expression.")
+		return
+	}
+
+	prefix_rule(p)
+
+	for precedence <= get_rule(p.current.type).precedence {
+		advance(p)
+		infix_rule := get_rule(p.previous.type).infix
+		infix_rule(p)
+	}
+}
+
+@(private = "file")
+ParseFn :: proc(_: ^Parser)
+
+@(private = "file")
+ParseRule :: struct {
+	prefix:     ParseFn,
+	infix:      ParseFn,
+	precedence: Precedence,
+}
+
+@(private = "file")
+get_rule :: proc(type: TokenType) -> ParseRule {
+	#partial switch type {
+	case .LEFT_PAREN:
+		return ParseRule{grouping, nil, .NONE}
+	case .MINUS:
+		return ParseRule{unary, binary, .TERM}
+	case .PLUS:
+		return ParseRule{nil, binary, .TERM}
+	case .SLASH:
+		return ParseRule{nil, binary, .FACTOR}
+	case .STAR:
+		return ParseRule{nil, binary, .FACTOR}
+	case .NUMBER:
+		return ParseRule{number, nil, .NONE}
+	case:
+		return ParseRule{nil, nil, .NONE}
+	}
+
+	unreachable()
+}
+
+Parser :: struct {
+	current:    Token,
+	previous:   Token,
+	scanner:    ^Scanner,
+	had_error:  bool,
+	panic_mode: bool,
+	chunk:      ^Chunk,
+}
+
+parser_init :: proc(p: ^Parser, s: ^Scanner, c: ^Chunk) {
+	p.scanner = s
+	p.had_error = false
+	p.panic_mode = false
+	p.chunk = c
+}
+
+@(private = "file")
+advance :: proc(p: ^Parser) {
+	p.previous = p.current
 
 	for {
-		// token := scan_token()
+		p.current = scan_token(p.scanner)
+		if p.current.type != .ERROR {break}
+
+		error_at_current(p, p.current.error)
+	}
+}
+
+@(private = "file")
+error_at_current :: proc(p: ^Parser, message: string) {
+	error_at(p, &p.current, message)
+}
+
+@(private = "file")
+error :: proc(p: ^Parser, message: string) {
+	error_at(p, &p.previous, message)
+}
+
+@(private = "file")
+error_at :: proc(p: ^Parser, token: ^Token, message: string) {
+	if p.panic_mode {return}
+	p.panic_mode = true
+	fmt.eprintf("[line %d] Error", token.line)
+
+	if token.type == .EOF {
+		fmt.eprint(" at end")
+	} else if token.type == .ERROR {
+
+	} else {
+		fmt.eprintf(" at '%s'", p.scanner.source[token.start:token.start + token.length])
+	}
+
+	fmt.eprintfln(": %s", message)
+	p.had_error = true
+}
+
+
+@(private = "file")
+consume :: proc(p: ^Parser, type: TokenType, message: string) {
+	if p.current.type == type {
+		advance(p)
+		return
+	}
+
+	error_at_current(p, message)
+}
+
+@(private = "file")
+emit_byte :: proc(p: ^Parser, byte: OpCodeByte) {
+	write_chunk(p.chunk, byte, p.previous.line)
+}
+
+@(private = "file")
+emit_bytes :: proc(p: ^Parser, b1: OpCodeByte, b2: OpCodeByte) {
+	emit_byte(p, b1)
+	emit_byte(p, b2)
+}
+
+
+@(private = "file")
+compiler_end :: proc(p: ^Parser) {
+	emit_return(p)
+
+	when ODIN_DEBUG {
+		if !p.had_error {
+			disassemble_chunk(p.chunk, "code")
+		}
+	}
+}
+
+@(private = "file")
+emit_return :: proc(p: ^Parser) {
+	emit_byte(p, OpCode.RETURN)
+}
+
+@(private = "file")
+emit_constant :: proc(p: ^Parser, value: Value) {
+	emit_bytes(p, OpCode.CONSTANT, make_constant(p, value))
+}
+
+@(private = "file")
+make_constant :: proc(p: ^Parser, value: Value) -> byte {
+	constant := add_constant(p.chunk, value)
+
+	// UINT8_MAX
+	if constant > 255 {
+		error(p, "Too many constants in one chunk.")
+		return 0
+	}
+
+	return u8(constant)
+}
+
+@(private = "file")
+number :: proc(p: ^Parser) {
+	src := p.scanner.source[p.previous.start:p.previous.start + p.previous.length]
+	value, _ := strconv.parse_f64(src)
+	emit_constant(p, value)
+}
+
+@(private = "file")
+grouping :: proc(p: ^Parser) {
+	expression(p)
+	consume(p, .RIGHT_PAREN, "Expect ')' after expression.")
+}
+
+@(private = "file")
+unary :: proc(p: ^Parser) {
+	opType := p.previous.type
+
+	parse_precedence(p, .UNARY)
+
+	#partial switch opType {
+	case .MINUS:
+		emit_byte(p, OpCode.NEGATE)
+	case:
+		unreachable()
+	}
+}
+
+expression :: proc(p: ^Parser) {
+	parse_precedence(p, .ASSIGNMENT)
+}
+
+
+binary :: proc(p: ^Parser) {
+	opType := p.previous.type
+	rule := get_rule(opType)
+	parse_precedence(p, next_precedence(rule.precedence))
+
+	#partial switch opType {
+	case .PLUS:
+		emit_byte(p, .ADD)
+	case .MINUS:
+		emit_byte(p, .SUBTRACT)
+	case .STAR:
+		emit_byte(p, .MULTIPLY)
+	case .SLASH:
+		emit_byte(p, .DIVIDE)
+	case:
+		unreachable()
 	}
 }
 
