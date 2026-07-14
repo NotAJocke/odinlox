@@ -1,6 +1,7 @@
 package core
 
 import "core:fmt"
+
 InterpretResult :: enum {
 	Ok,
 	CompileError,
@@ -70,15 +71,28 @@ run :: proc(vm: ^VM) -> InterpretResult {
 			fmt.println()
 			return .Ok
 		case .NEGATE:
-			append(&vm.stack, -pop(&vm.stack))
-		case .ADD:
-			fallthrough
-		case .SUBTRACT:
-			fallthrough
-		case .MULTIPLY:
-			fallthrough
-		case .DIVIDE:
+			value := pop(&vm.stack)
+			#partial switch v in value {
+			case f64:
+				append(&vm.stack, -v)
+			case:
+				runtime_error(vm, "Operand must be a number.")
+			}
+		case .ADD, .SUBTRACT, .MULTIPLY, .DIVIDE, .GREATER, .LESS:
 			binary_op(vm, instruction)
+		case .NIL:
+			append(&vm.stack, nil)
+		case .TRUE:
+			append(&vm.stack, true)
+		case .FALSE:
+			append(&vm.stack, false)
+		case .NOT:
+			append(&vm.stack, is_falsey(pop(&vm.stack)))
+		case .EQUAL:
+			b := pop(&vm.stack)
+			a := pop(&vm.stack)
+			append(&vm.stack, values_equal(a, b))
+
 		}
 	}
 }
@@ -100,9 +114,20 @@ reset_stack :: proc(vm: ^VM) {
 }
 
 @(private)
-binary_op :: proc(vm: ^VM, instruction: OpCode) {
-	b := pop(&vm.stack)
-	a := pop(&vm.stack)
+binary_op :: proc(vm: ^VM, instruction: OpCode) -> InterpretResult {
+	x := peek(vm, 0)
+	y := peek(vm, 1)
+
+	b, ok := x.(f64)
+	a, ok2 := y.(f64)
+
+	if !ok || !ok2 {
+		runtime_error(vm, "Operands must be numbers.")
+		return .RuntimeError
+	}
+
+	_ = pop(&vm.stack) // b
+	_ = pop(&vm.stack) // a
 
 	#partial switch instruction {
 	case .ADD:
@@ -113,8 +138,37 @@ binary_op :: proc(vm: ^VM, instruction: OpCode) {
 		append(&vm.stack, a * b)
 	case .DIVIDE:
 		append(&vm.stack, a / b)
+	case .GREATER:
+		append(&vm.stack, a > b)
+	case .LESS:
+		append(&vm.stack, a < b)
 	case:
 		fmt.printfln("Got impossible binary op: %v", instruction)
 	}
+
+	return .Ok
+}
+
+@(private = "file")
+peek :: proc(vm: ^VM, distance: int) -> Value {
+	return vm.stack[len(vm.stack) - 1 - distance]
+}
+
+@(private = "file")
+runtime_error :: proc(vm: ^VM, message: string, args: ..any) {
+	fmt.eprintfln(message, args)
+
+	instruction := vm.ip - 1
+	line := vm.chunk.lines[instruction]
+
+	fmt.eprintfln("[line %d] in script", line)
+
+	reset_stack(vm)
+}
+
+@(private = "file")
+is_falsey :: proc(value: Value) -> bool {
+	b, is_bool := value.(bool)
+	return value == nil || (is_bool && !b)
 }
 

@@ -111,6 +111,14 @@ get_rule :: proc(type: TokenType) -> ParseRule {
 		return ParseRule{nil, binary, .FACTOR}
 	case .NUMBER:
 		return ParseRule{number, nil, .NONE}
+	case .FALSE, .TRUE, .NIL:
+		return ParseRule{literal, nil, .NONE}
+	case .BANG:
+		return ParseRule{unary, nil, .NONE}
+	case .BANG_EQUAL, .EQUAL_EQUAL:
+		return ParseRule{nil, binary, .EQUALITY}
+	case .GREATER, .GREATER_EQUAL, .LESS, .LESS_EQUAL:
+		return ParseRule{nil, binary, .COMPARISON}
 	case:
 		return ParseRule{nil, nil, .NONE}
 	}
@@ -253,16 +261,19 @@ unary :: proc(p: ^Parser) {
 	#partial switch opType {
 	case .MINUS:
 		emit_byte(p, OpCode.NEGATE)
+	case .BANG:
+		emit_byte(p, OpCode.NOT)
 	case:
 		unreachable()
 	}
 }
 
+@(private = "file")
 expression :: proc(p: ^Parser) {
 	parse_precedence(p, .ASSIGNMENT)
 }
 
-
+@(private = "file")
 binary :: proc(p: ^Parser) {
 	opType := p.previous.type
 	rule := get_rule(opType)
@@ -277,6 +288,32 @@ binary :: proc(p: ^Parser) {
 		emit_byte(p, .MULTIPLY)
 	case .SLASH:
 		emit_byte(p, .DIVIDE)
+	case .BANG_EQUAL:
+		emit_bytes(p, .EQUAL, .NOT)
+	case .EQUAL_EQUAL:
+		emit_byte(p, .EQUAL)
+	case .GREATER:
+		emit_byte(p, .GREATER)
+	case .GREATER_EQUAL:
+		emit_bytes(p, .LESS, .NOT)
+	case .LESS:
+		emit_byte(p, .LESS)
+	case .LESS_EQUAL:
+		emit_bytes(p, .GREATER, .NOT)
+	case:
+		unreachable()
+	}
+}
+
+@(private = "file")
+literal :: proc(p: ^Parser) {
+	#partial switch p.previous.type {
+	case .FALSE:
+		emit_byte(p, OpCode.FALSE)
+	case .TRUE:
+		emit_byte(p, OpCode.TRUE)
+	case .NIL:
+		emit_byte(p, OpCode.NIL)
 	case:
 		unreachable()
 	}

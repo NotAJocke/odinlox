@@ -4,7 +4,14 @@ import "core:fmt"
 
 OpCode :: enum u8 {
 	CONSTANT,
+	NIL,
+	TRUE,
+	FALSE,
+	EQUAL,
+	GREATER,
+	LESS,
 	NEGATE,
+	NOT,
 	ADD,
 	SUBTRACT,
 	MULTIPLY,
@@ -36,16 +43,6 @@ free_chunk :: proc(c: ^Chunk) {
 }
 
 
-//TODO: clean this up
-// write_chunk_code :: proc(c: ^Chunk, byte: OpCode, line: int) {
-// 	write_chunk_byte(c, u8(byte), line)
-// }
-
-// write_chunk_byte :: proc(c: ^Chunk, byte: u8, line: int) {
-// 	append(&c.code, byte)
-// 	append(&c.lines, line)
-// }
-
 write_chunk :: proc(c: ^Chunk, opCodeByte: OpCodeByte, line: int) {
 	b: byte
 
@@ -59,11 +56,6 @@ write_chunk :: proc(c: ^Chunk, opCodeByte: OpCodeByte, line: int) {
 	append(&c.code, b)
 	append(&c.lines, line)
 }
-
-// write_chunk :: proc {
-// 	write_chunk_byte,
-// 	write_chunk_code,
-// }
 
 add_constant :: proc(c: ^Chunk, value: Value) -> int {
 	append(&c.constants, value)
@@ -107,7 +99,20 @@ disassemble_instruction :: proc(c: ^Chunk, offset: int) -> int {
 		return simple_instruction("OP_MULTIPLY", offset)
 	case .DIVIDE:
 		return simple_instruction("OP_DIVIDE", offset)
-
+	case .NIL:
+		return simple_instruction("OP_NIL", offset)
+	case .TRUE:
+		return simple_instruction("OP_TRUE", offset)
+	case .FALSE:
+		return simple_instruction("OP_FALSE", offset)
+	case .NOT:
+		return simple_instruction("OP_NOT", offset)
+	case .EQUAL:
+		return simple_instruction("OP_EQUAL", offset)
+	case .GREATER:
+		return simple_instruction("OP_GREATER", offset)
+	case .LESS:
+		return simple_instruction("OP_LESS", offset)
 	}
 
 	return 0
