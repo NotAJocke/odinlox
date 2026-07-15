@@ -12,14 +12,24 @@ InterpretResult :: enum {
 STACK_MAX :: 256
 
 VM :: struct {
-	chunk: ^Chunk,
-	ip:    int,
-	debug: bool,
-	stack: [dynamic; STACK_MAX]Value,
+	chunk:   ^Chunk,
+	ip:      int,
+	debug:   bool,
+	stack:   [dynamic; STACK_MAX]Value,
+	strings: Table,
 }
 
 new_vm :: proc(debug: bool) -> VM {
-	return VM{chunk = nil, ip = 0, debug = debug, stack = [dynamic; STACK_MAX]Value{}}
+	strings: Table
+	table_init(&strings)
+
+	return VM {
+		chunk = nil,
+		ip = 0,
+		debug = debug,
+		stack = [dynamic; STACK_MAX]Value{},
+		strings = strings,
+	}
 }
 
 free_vm :: proc() {
@@ -31,7 +41,7 @@ interpret :: proc(vm: ^VM, source: string) -> InterpretResult {
 	chunk: Chunk
 	init_chunk(&chunk)
 
-	r := compile(source, &chunk)
+	r := compile(source, &chunk, &vm.strings)
 	if r != .Ok {
 		free_chunk(&chunk)
 		return r
@@ -203,7 +213,7 @@ is_falsey :: proc(value: Value) -> bool {
 @(private = "file")
 concatenate :: proc(vm: ^VM, s1: ^ObjString, s2: ^ObjString) {
 	new_string := strings.concatenate({s1.data, s2.data})
-	new_obj := obj_string_take(new_string, obj_allocated_cb)
+	new_obj := obj_string_take(new_string, &vm.strings, obj_allocated_cb)
 
 	append(&vm.stack, cast(^Obj)new_obj)
 }

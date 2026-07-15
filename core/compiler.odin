@@ -3,12 +3,12 @@ package core
 import "core:fmt"
 import "core:strconv"
 
-compile :: proc(source: string, chunk: ^Chunk) -> InterpretResult {
+compile :: proc(source: string, chunk: ^Chunk, strings: ^Table) -> InterpretResult {
 	scanner: Scanner
 	scanner_init(&scanner, source)
 
 	parser: Parser
-	parser_init(&parser, &scanner, chunk)
+	parser_init(&parser, &scanner, chunk, strings)
 
 	advance(&parser)
 	expression(&parser)
@@ -135,13 +135,15 @@ Parser :: struct {
 	had_error:  bool,
 	panic_mode: bool,
 	chunk:      ^Chunk,
+	strings:    ^Table,
 }
 
-parser_init :: proc(p: ^Parser, s: ^Scanner, c: ^Chunk) {
+parser_init :: proc(p: ^Parser, s: ^Scanner, c: ^Chunk, strings: ^Table) {
 	p.scanner = s
 	p.had_error = false
 	p.panic_mode = false
 	p.chunk = c
+	p.strings = strings
 }
 
 @(private = "file")
@@ -328,6 +330,7 @@ parse_string :: proc(p: ^Parser) {
 		p,
 		cast(^Obj)obj_string_copy(
 			p.scanner.source[p.previous.start + 1:p.previous.start + p.previous.length - 1],
+			p.strings,
 			obj_allocated_cb,
 		),
 	)

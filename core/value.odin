@@ -39,10 +39,7 @@ values_equal :: proc(lhs: Value, rhs: Value) -> bool {
 		w, ok := rhs.(^Obj)
 		if !ok {return false}
 
-		s1 := cast(^ObjString)v
-		s2 := cast(^ObjString)w
-
-		return s1 == s2
+		return v == w
 	case nil:
 		return true
 	}
