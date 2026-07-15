@@ -128,12 +128,12 @@ scan_token :: proc(s: ^Scanner) -> Token {
 	return error_token(s, "Unexpected character")
 }
 
-@(private)
+@(private = "file")
 is_at_end :: proc(s: ^Scanner) -> bool {
 	return s.current >= len(s.source)
 }
 
-@(private)
+@(private = "file")
 make_token :: proc(s: ^Scanner, type: TokenType) -> Token {
 	return Token {
 		type = type,
@@ -145,7 +145,7 @@ make_token :: proc(s: ^Scanner, type: TokenType) -> Token {
 }
 
 
-@(private)
+@(private = "file")
 error_token :: proc(s: ^Scanner, message: string) -> Token {
 	return Token {
 		type = .ERROR,
@@ -163,7 +163,7 @@ advance :: proc(s: ^Scanner) -> rune {
 }
 
 
-@(private)
+@(private = "file")
 match :: proc(s: ^Scanner, expected: u8) -> bool {
 	if is_at_end(s) {return false}
 
@@ -174,7 +174,7 @@ match :: proc(s: ^Scanner, expected: u8) -> bool {
 }
 
 
-@(private)
+@(private = "file")
 skip_whitespace :: proc(s: ^Scanner) {
 	for {
 		c := peek(s)
@@ -204,13 +204,13 @@ skip_whitespace :: proc(s: ^Scanner) {
 	}
 }
 
-@(private)
+@(private = "file")
 peek :: proc(s: ^Scanner) -> rune {
 	if is_at_end(s) {return cast(rune)0}
 	return rune(s.source[s.current])
 }
 
-@(private)
+@(private = "file")
 peek_next :: proc(s: ^Scanner) -> Maybe(rune) {
 	if is_at_end(s) {return nil}
 	if s.current + 1 >= len(s.source) {return nil}
@@ -218,7 +218,7 @@ peek_next :: proc(s: ^Scanner) -> Maybe(rune) {
 }
 
 
-@(private)
+@(private = "file")
 scan_string :: proc(s: ^Scanner) -> Token {
 	for peek(s) != '"' && !is_at_end(s) {
 		if peek(s) == '\n' {s.line += 1}
@@ -231,17 +231,17 @@ scan_string :: proc(s: ^Scanner) -> Token {
 	return make_token(s, .STRING)
 }
 
-@(private)
+@(private = "file")
 is_digit :: proc(c: rune) -> bool {
 	return c >= '0' && c <= '9'
 }
 
-@(private)
+@(private = "file")
 is_alpha :: proc(c: rune) -> bool {
 	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'}
 
 
-@(private)
+@(private = "file")
 scan_number :: proc(s: ^Scanner) -> Token {
 	for is_digit(peek(s)) {
 		advance(s)
@@ -257,7 +257,7 @@ scan_number :: proc(s: ^Scanner) -> Token {
 	return make_token(s, .NUMBER)
 }
 
-@(private)
+@(private = "file")
 scan_identifier :: proc(s: ^Scanner) -> Token {
 	for is_alpha(peek(s)) || is_digit(peek(s)) {advance(s)}
 
@@ -265,7 +265,7 @@ scan_identifier :: proc(s: ^Scanner) -> Token {
 }
 
 
-@(private)
+@(private = "file")
 identifier_type :: proc(s: ^Scanner) -> TokenType {
 	switch s.source[s.start] {
 	case 'a':
@@ -315,7 +315,7 @@ identifier_type :: proc(s: ^Scanner) -> TokenType {
 	return .IDENTIFIER
 }
 
-@(private)
+@(private = "file")
 check_keyword :: proc(
 	s: ^Scanner,
 	start: int,

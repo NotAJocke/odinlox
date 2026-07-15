@@ -1,6 +1,7 @@
 package core
 
 import "core:fmt"
+import "core:strings"
 
 InterpretResult :: enum {
 	Ok,
@@ -21,7 +22,10 @@ new_vm :: proc(debug: bool) -> VM {
 	return VM{chunk = nil, ip = 0, debug = debug, stack = [dynamic; STACK_MAX]Value{}}
 }
 
-free_vm :: proc() {}
+free_vm :: proc() {
+	obj_pool_free()
+	delete(obj_pool)
+}
 
 interpret :: proc(vm: ^VM, source: string) -> InterpretResult {
 	chunk: Chunk
@@ -78,7 +82,30 @@ run :: proc(vm: ^VM) -> InterpretResult {
 			case:
 				runtime_error(vm, "Operand must be a number.")
 			}
-		case .ADD, .SUBTRACT, .MULTIPLY, .DIVIDE, .GREATER, .LESS:
+		case .ADD:
+			v1 := peek(vm, 0)
+			v2 := peek(vm, 1)
+
+			n1, is_n1 := v1.(f64)
+			n2, is_n2 := v2.(f64)
+
+			if is_obj_type(v1, .String) && is_obj_type(v2, .String) {
+				pop(&vm.stack) // s1
+				pop(&vm.stack) // s2
+
+				s1 := cast(^ObjString)v1.(^Obj)
+				s2 := cast(^ObjString)v2.(^Obj)
+				concatenate(vm, s2, s1)
+			} else if is_n1 && is_n2 {
+				pop(&vm.stack) // n1
+				pop(&vm.stack) // n2
+
+				append(&vm.stack, n1 + n2)
+			} else {
+				runtime_error(vm, "Operands must be two numbers or two strings.")
+				return .RuntimeError
+			}
+		case .SUBTRACT, .MULTIPLY, .DIVIDE, .GREATER, .LESS:
 			binary_op(vm, instruction)
 		case .NIL:
 			append(&vm.stack, nil)
@@ -170,5 +197,26 @@ runtime_error :: proc(vm: ^VM, message: string, args: ..any) {
 is_falsey :: proc(value: Value) -> bool {
 	b, is_bool := value.(bool)
 	return value == nil || (is_bool && !b)
+}
+
+
+@(private = "file")
+concatenate :: proc(vm: ^VM, s1: ^ObjString, s2: ^ObjString) {
+	new_string := strings.concatenate({s1.data, s2.data})
+	new_obj := obj_string_take(new_string, obj_allocated_cb)
+
+	append(&vm.stack, cast(^Obj)new_obj)
+}
+
+
+obj_pool: [dynamic]^Obj
+@(private = "file")
+obj_pool_free :: proc() {
+	for obj in obj_pool {
+		obj_free(obj)
+	}
+}
+obj_allocated_cb :: proc(obj: ^Obj) {
+	append(&obj_pool, obj)
 }
 

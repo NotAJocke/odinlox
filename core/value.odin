@@ -7,6 +7,7 @@ import "core:fmt"
 Value :: union {
 	bool,
 	f64,
+	^Obj,
 }
 
 print_value :: proc(value: Value) {
@@ -15,6 +16,8 @@ print_value :: proc(value: Value) {
 		if v {fmt.print("true")} else {fmt.print("false")}
 	case f64:
 		fmt.printf("%v", v)
+	case ^Obj:
+		obj_print(v)
 	case nil:
 		fmt.printf("nil")
 	}
@@ -32,6 +35,14 @@ values_equal :: proc(lhs: Value, rhs: Value) -> bool {
 		if !ok {return false}
 
 		return v == w
+	case ^Obj:
+		w, ok := rhs.(^Obj)
+		if !ok {return false}
+
+		s1 := cast(^ObjString)v
+		s2 := cast(^ObjString)w
+
+		return s1 == s2
 	case nil:
 		return true
 	}

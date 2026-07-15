@@ -119,6 +119,8 @@ get_rule :: proc(type: TokenType) -> ParseRule {
 		return ParseRule{nil, binary, .EQUALITY}
 	case .GREATER, .GREATER_EQUAL, .LESS, .LESS_EQUAL:
 		return ParseRule{nil, binary, .COMPARISON}
+	case .STRING:
+		return ParseRule{parse_string, nil, .NONE}
 	case:
 		return ParseRule{nil, nil, .NONE}
 	}
@@ -317,5 +319,17 @@ literal :: proc(p: ^Parser) {
 	case:
 		unreachable()
 	}
+}
+
+
+@(private = "file")
+parse_string :: proc(p: ^Parser) {
+	emit_constant(
+		p,
+		cast(^Obj)obj_string_copy(
+			p.scanner.source[p.previous.start + 1:p.previous.start + p.previous.length - 1],
+			obj_allocated_cb,
+		),
+	)
 }
 

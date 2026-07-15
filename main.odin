@@ -3,6 +3,7 @@
 package main
 
 import "core:os"
+import "core:strings"
 
 import "core:fmt"
 import "core:mem"
@@ -52,10 +53,18 @@ repl :: proc(vm: ^core.VM) {
 	for {
 		fmt.print("> ")
 		read, _ := os.read(os.stdin, buf[:])
-		if read > 0 {
 
-			interpret(vm, string(buf[:read]))
+		if read > 0 {
+			line := strings.trim_right(string(buf[:read]), "\t\r\n")
+
+			switch line {
+			case ":q":
+				return
+			}
+
+			interpret(vm, line)
 		}
+
 	}
 
 }
