@@ -3,6 +3,9 @@ package core
 import "core:fmt"
 
 OpCode :: enum u8 {
+	SET_GLOBAL,
+	GET_GLOBAL,
+	DEFINE_GLOBAL,
 	CONSTANT,
 	NIL,
 	TRUE,
@@ -11,6 +14,8 @@ OpCode :: enum u8 {
 	GREATER,
 	LESS,
 	NEGATE,
+	PRINT,
+	POP,
 	NOT,
 	ADD,
 	SUBTRACT,
@@ -113,6 +118,16 @@ disassemble_instruction :: proc(c: ^Chunk, offset: int) -> int {
 		return simple_instruction("OP_GREATER", offset)
 	case .LESS:
 		return simple_instruction("OP_LESS", offset)
+	case .PRINT:
+		return simple_instruction("OP_PRINT", offset)
+	case .POP:
+		return simple_instruction("OP_POP", offset)
+	case .DEFINE_GLOBAL:
+		return constant_instruction("OP_DEFINE_GLOBAL", c, offset)
+	case .GET_GLOBAL:
+		return constant_instruction("OP_GET_GLOBAL", c, offset)
+	case .SET_GLOBAL:
+		return constant_instruction("OP_SET_GLOBAL", c, offset)
 	}
 
 	return 0

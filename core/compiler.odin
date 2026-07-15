@@ -11,8 +11,12 @@ compile :: proc(source: string, chunk: ^Chunk, strings: ^Table) -> InterpretResu
 	parser_init(&parser, &scanner, chunk, strings)
 
 	advance(&parser)
-	expression(&parser)
-	consume(&parser, .EOF, "Expect end of expression.")
+	// expression(&parser)
+	// consume(&parser, .EOF, "Expect end of expression.")
+
+	for !match(&parser, .EOF) {
+		declaration(&parser)
+	}
 
 	compiler_end(&parser)
 
@@ -77,17 +81,23 @@ parse_precedence :: proc(p: ^Parser, precedence: Precedence) {
 		return
 	}
 
-	prefix_rule(p)
+	can_assign := precedence <= .ASSIGNMENT
+	prefix_rule(p, can_assign)
 
 	for precedence <= get_rule(p.current.type).precedence {
 		advance(p)
 		infix_rule := get_rule(p.previous.type).infix
-		infix_rule(p)
+		infix_rule(p, can_assign)
+	}
+
+	if can_assign && match(p, .EQUAL) {
+		error(p, "Invalid assignment target.")
 	}
 }
 
 @(private = "file")
-ParseFn :: proc(_: ^Parser)
+ParseFn :: proc(_: ^Parser, _: bool)
+
 
 @(private = "file")
 ParseRule :: struct {
@@ -121,6 +131,8 @@ get_rule :: proc(type: TokenType) -> ParseRule {
 		return ParseRule{nil, binary, .COMPARISON}
 	case .STRING:
 		return ParseRule{parse_string, nil, .NONE}
+	case .IDENTIFIER:
+		return ParseRule{variable, nil, .NONE}
 	case:
 		return ParseRule{nil, nil, .NONE}
 	}
@@ -244,20 +256,86 @@ make_constant :: proc(p: ^Parser, value: Value) -> byte {
 }
 
 @(private = "file")
-number :: proc(p: ^Parser) {
+match :: proc(p: ^Parser, type: TokenType) -> bool {
+	if !check(p, type) {return false}
+	advance(p)
+	return true
+}
+
+@(private = "file")
+check :: proc(p: ^Parser, type: TokenType) -> bool {
+	return p.current.type == type
+}
+
+@(private = "file")
+synchronize :: proc(p: ^Parser) {
+	p.panic_mode = false
+
+	for p.current.type != .EOF {
+		if p.previous.type == .SEMICOLON {return}
+
+		#partial switch p.current.type {
+		case .CLASS, .FUN, .VAR, .FOR, .IF, .WHILE, .PRINT, .RETURN:
+			return
+		}
+
+		advance(p)
+	}
+}
+
+@(private = "file")
+parse_variable :: proc(p: ^Parser, err: string) -> u8 {
+	consume(p, .IDENTIFIER, err)
+	return identifier_constant(p, &p.previous)
+}
+
+@(private = "file")
+identifier_constant :: proc(p: ^Parser, name: ^Token) -> u8 {
+	return make_constant(
+		p,
+		cast(^Obj)obj_string_copy(
+			p.scanner.source[name.start:name.start + name.length],
+			p.strings,
+			obj_allocated_cb,
+		),
+	)
+}
+
+@(private = "file")
+define_variable :: proc(p: ^Parser, global: u8) {
+	emit_bytes(p, OpCode.DEFINE_GLOBAL, global)
+}
+
+@(private = "file")
+named_variable :: proc(p: ^Parser, name: Token, can_assign: bool) {
+	name := name
+
+	arg := identifier_constant(p, &name)
+
+	if can_assign && match(p, .EQUAL) {
+		expression(p)
+		emit_bytes(p, OpCode.SET_GLOBAL, arg)
+	} else {
+		emit_bytes(p, OpCode.GET_GLOBAL, arg)
+	}}
+
+// PARSING FNS
+
+@(private = "file")
+number :: proc(p: ^Parser, _: bool) {
 	src := p.scanner.source[p.previous.start:p.previous.start + p.previous.length]
 	value, _ := strconv.parse_f64(src)
 	emit_constant(p, value)
 }
 
 @(private = "file")
-grouping :: proc(p: ^Parser) {
+grouping :: proc(p: ^Parser, _: bool) {
 	expression(p)
 	consume(p, .RIGHT_PAREN, "Expect ')' after expression.")
 }
 
 @(private = "file")
-unary :: proc(p: ^Parser) {
+unary :: proc(p: ^Parser, _: bool) {
 	opType := p.previous.type
 
 	parse_precedence(p, .UNARY)
@@ -278,7 +356,7 @@ expression :: proc(p: ^Parser) {
 }
 
 @(private = "file")
-binary :: proc(p: ^Parser) {
+binary :: proc(p: ^Parser, _: bool) {
 	opType := p.previous.type
 	rule := get_rule(opType)
 	parse_precedence(p, next_precedence(rule.precedence))
@@ -310,7 +388,7 @@ binary :: proc(p: ^Parser) {
 }
 
 @(private = "file")
-literal :: proc(p: ^Parser) {
+literal :: proc(p: ^Parser, _: bool) {
 	#partial switch p.previous.type {
 	case .FALSE:
 		emit_byte(p, OpCode.FALSE)
@@ -325,7 +403,7 @@ literal :: proc(p: ^Parser) {
 
 
 @(private = "file")
-parse_string :: proc(p: ^Parser) {
+parse_string :: proc(p: ^Parser, _: bool) {
 	emit_constant(
 		p,
 		cast(^Obj)obj_string_copy(
@@ -334,5 +412,58 @@ parse_string :: proc(p: ^Parser) {
 			obj_allocated_cb,
 		),
 	)
+}
+
+@(private = "file")
+declaration :: proc(p: ^Parser) {
+	if match(p, .VAR) {
+		var_declaration(p)
+	} else {
+		statement(p)
+	}
+
+	if p.panic_mode {synchronize(p)}
+}
+
+@(private = "file")
+statement :: proc(p: ^Parser) {
+	if match(p, .PRINT) {
+		print_statement(p)
+	} else {
+		expression_statement(p)
+	}
+}
+
+@(private = "file")
+print_statement :: proc(p: ^Parser) {
+	expression(p)
+	consume(p, .SEMICOLON, "Expect ';' after value.")
+	emit_byte(p, OpCode.PRINT)
+}
+
+@(private = "file")
+expression_statement :: proc(p: ^Parser) {
+	expression(p)
+	consume(p, .SEMICOLON, "Expect ';' after expression.")
+	emit_byte(p, OpCode.POP)
+}
+
+@(private = "file")
+var_declaration :: proc(p: ^Parser) {
+	global := parse_variable(p, "Expect variable name")
+
+	if match(p, .EQUAL) {
+		expression(p)
+	} else {
+		emit_byte(p, OpCode.NIL)
+	}
+	consume(p, .SEMICOLON, "Expect ';' after variable declaration")
+
+	define_variable(p, global)
+}
+
+@(private = "file")
+variable :: proc(p: ^Parser, can_assign: bool) {
+	named_variable(p, p.previous, can_assign)
 }
 

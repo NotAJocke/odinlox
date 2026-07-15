@@ -17,11 +17,15 @@ VM :: struct {
 	debug:   bool,
 	stack:   [dynamic; STACK_MAX]Value,
 	strings: Table,
+	globals: Table,
 }
 
 new_vm :: proc(debug: bool) -> VM {
 	strings: Table
 	table_init(&strings)
+
+	globals: Table
+	table_init(&globals)
 
 	return VM {
 		chunk = nil,
@@ -29,11 +33,13 @@ new_vm :: proc(debug: bool) -> VM {
 		debug = debug,
 		stack = [dynamic; STACK_MAX]Value{},
 		strings = strings,
+		globals = globals,
 	}
 }
 
 free_vm :: proc(vm: ^VM) {
 	table_free(&vm.strings)
+	table_free(&vm.globals)
 	obj_pool_free()
 	delete(obj_pool)
 }
@@ -82,8 +88,6 @@ run :: proc(vm: ^VM) -> InterpretResult {
 			constant := read_constant(vm)
 			append(&vm.stack, constant)
 		case .RETURN:
-			print_value(pop(&vm.stack))
-			fmt.println()
 			return .Ok
 		case .NEGATE:
 			value := pop(&vm.stack)
@@ -130,7 +134,33 @@ run :: proc(vm: ^VM) -> InterpretResult {
 			b := pop(&vm.stack)
 			a := pop(&vm.stack)
 			append(&vm.stack, values_equal(a, b))
+		case .PRINT:
+			print_value(pop(&vm.stack))
+			fmt.println()
+		case .POP:
+			pop(&vm.stack)
+		case .DEFINE_GLOBAL:
+			name := read_string(vm)
+			table_set(&vm.globals, name, peek(vm, 0))
+			pop(&vm.stack)
+		case .GET_GLOBAL:
+			name := read_string(vm)
+			value, ok := table_get(&vm.globals, name).?
 
+			if !ok {
+				runtime_error(vm, "Undefined variable '%s'.", name.data)
+				return .RuntimeError
+			}
+
+			append(&vm.stack, value^)
+		case .SET_GLOBAL:
+			name := read_string(vm)
+
+			if table_set(&vm.globals, name, peek(vm, 0)) {
+				table_delete(&vm.globals, name)
+				runtime_error(vm, "Undefined variable '%s'.", name.data)
+				return .RuntimeError
+			}
 		}
 	}
 }
@@ -144,6 +174,11 @@ read_byte :: proc(vm: ^VM) -> u8 {
 @(private)
 read_constant :: proc(vm: ^VM) -> Value {
 	return vm.chunk.constants[read_byte(vm)]
+}
+
+@(private = "file")
+read_string :: proc(vm: ^VM) -> ^ObjString {
+	return cast(^ObjString)read_constant(vm).(^Obj)
 }
 
 @(private)
