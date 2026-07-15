@@ -51,7 +51,7 @@ obj_string_take :: proc(data: string, strings: ^Table, cb: ObjAllocTrack) -> ^Ob
 }
 
 obj_string_new :: proc(data: string, hash: u32, strings: ^Table, cb: ObjAllocTrack) -> ^ObjString {
-	obj := cast(^ObjString)obj_allocate(.String, cb)
+	obj := cast(^ObjString)obj_allocate(.String, size_of(ObjString), cb)
 	obj.data = data
 	obj.hash = hash
 
@@ -61,8 +61,8 @@ obj_string_new :: proc(data: string, hash: u32, strings: ^Table, cb: ObjAllocTra
 }
 
 @(private = "file")
-obj_allocate :: proc(otype: ObjType, cb: ObjAllocTrack) -> ^Obj {
-	obj := new(Obj)
+obj_allocate :: proc(otype: ObjType, size: int, cb: ObjAllocTrack) -> ^Obj {
+	obj := cast(^Obj)make([^]byte, size)
 	obj.type = otype
 
 	cb(obj)
