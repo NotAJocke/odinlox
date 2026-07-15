@@ -7,8 +7,11 @@ compile :: proc(source: string, chunk: ^Chunk, strings: ^Table) -> InterpretResu
 	scanner: Scanner
 	scanner_init(&scanner, source)
 
+	compiler: Compiler
+	compiler_init(&compiler)
+
 	parser: Parser
-	parser_init(&parser, &scanner, chunk, strings)
+	parser_init(&parser, &scanner, &compiler, chunk, strings)
 
 	advance(&parser)
 	// expression(&parser)
@@ -25,6 +28,40 @@ compile :: proc(source: string, chunk: ^Chunk, strings: ^Table) -> InterpretResu
 	}
 
 	return .Ok
+}
+
+UINT8_COUNT :: 255 + 1
+Local :: struct {
+	name:  Token,
+	depth: int,
+}
+
+Compiler :: struct {
+	locals:      [UINT8_COUNT]Local,
+	local_count: int,
+	scope_depth: int,
+}
+
+compiler_init :: proc(c: ^Compiler) {
+	c.local_count = 0
+	c.scope_depth = 0
+}
+
+@(private = "file")
+begin_scope :: proc(c: ^Compiler) {
+	c.scope_depth += 1
+}
+
+@(private = "file")
+end_scope :: proc(p: ^Parser) {
+	c := p.compiler
+
+	c.scope_depth -= 1
+
+	for c.local_count > 0 && c.locals[c.local_count - 1].depth > c.scope_depth {
+		emit_byte(p, .POP)
+		c.local_count -= 1
+	}
 }
 
 Precedence :: enum {
@@ -148,14 +185,23 @@ Parser :: struct {
 	panic_mode: bool,
 	chunk:      ^Chunk,
 	strings:    ^Table,
+	compiler:   ^Compiler,
 }
 
-parser_init :: proc(p: ^Parser, s: ^Scanner, c: ^Chunk, strings: ^Table) {
-	p.scanner = s
+parser_init :: proc(
+	p: ^Parser,
+	scanner: ^Scanner,
+	compiler: ^Compiler,
+	chunk: ^Chunk,
+	strings: ^Table,
+) {
+	p.scanner = scanner
+	p.compiler = compiler
+	p.chunk = chunk
+	p.strings = strings
 	p.had_error = false
 	p.panic_mode = false
-	p.chunk = c
-	p.strings = strings
+
 }
 
 @(private = "file")
@@ -286,6 +332,10 @@ synchronize :: proc(p: ^Parser) {
 @(private = "file")
 parse_variable :: proc(p: ^Parser, err: string) -> u8 {
 	consume(p, .IDENTIFIER, err)
+
+	declare_variable(p)
+	if p.compiler.scope_depth > 0 {return 0}
+
 	return identifier_constant(p, &p.previous)
 }
 
@@ -303,21 +353,99 @@ identifier_constant :: proc(p: ^Parser, name: ^Token) -> u8 {
 
 @(private = "file")
 define_variable :: proc(p: ^Parser, global: u8) {
+	if p.compiler.scope_depth > 0 {
+		mark_initialized(p.compiler)
+		return
+	}
+
 	emit_bytes(p, OpCode.DEFINE_GLOBAL, global)
+}
+
+@(private = "file")
+mark_initialized :: proc(c: ^Compiler) {
+	c.locals[c.local_count - 1].depth = c.scope_depth
+}
+
+@(private = "file")
+identifiers_equal :: proc(p: ^Parser, a: ^Token, b: ^Token) -> bool {
+	a := p.scanner.source[a.start:a.start + a.length]
+	b := p.scanner.source[b.start:b.start + b.length]
+
+	return a == b
+}
+
+@(private = "file")
+declare_variable :: proc(p: ^Parser) {
+	if p.compiler.scope_depth == 0 {return}
+
+	name := &p.previous
+
+	for i := p.compiler.local_count - 1; i >= 0; i -= 1 {
+		local := &p.compiler.locals[i]
+		if local.depth != -1 && local.depth < p.compiler.scope_depth {
+			break
+		}
+
+		if identifiers_equal(p, name, &local.name) {
+			error(p, "Already a variable with this name in this scope.")
+		}
+	}
+
+	add_local(p, name^)
+}
+
+@(private = "file")
+add_local :: proc(p: ^Parser, name: Token) {
+	if p.compiler.local_count == UINT8_COUNT {
+		error(p, "Too many local variables in function.")
+		return
+	}
+
+	local := &p.compiler.locals[p.compiler.local_count]
+	p.compiler.local_count += 1
+
+	local.name = name
+	local.depth = -1
 }
 
 @(private = "file")
 named_variable :: proc(p: ^Parser, name: Token, can_assign: bool) {
 	name := name
 
-	arg := identifier_constant(p, &name)
+
+	get_op, set_op: OpCode
+	arg := resolve_local(p, &name)
+	if (arg != -1) {
+		get_op = .GET_LOCAL
+		set_op = .SET_LOCAL
+	} else {
+		arg = cast(int)identifier_constant(p, &name)
+		get_op = .GET_GLOBAL
+		set_op = .SET_GLOBAL
+	}
 
 	if can_assign && match(p, .EQUAL) {
 		expression(p)
-		emit_bytes(p, OpCode.SET_GLOBAL, arg)
+		emit_bytes(p, set_op, u8(arg))
 	} else {
-		emit_bytes(p, OpCode.GET_GLOBAL, arg)
-	}}
+		emit_bytes(p, get_op, u8(arg))
+	}
+}
+
+@(private = "file")
+resolve_local :: proc(p: ^Parser, name: ^Token) -> int {
+	for i := p.compiler.local_count - 1; i >= 0; i -= 1 {
+		local := &p.compiler.locals[i]
+		if identifiers_equal(p, name, &local.name) {
+			if local.depth == -1 {
+				error(p, "Can't read local variables in its own initializer.")
+			}
+			return i
+		}
+	}
+
+	return -1
+}
 
 // PARSING FNS
 
@@ -429,6 +557,10 @@ declaration :: proc(p: ^Parser) {
 statement :: proc(p: ^Parser) {
 	if match(p, .PRINT) {
 		print_statement(p)
+	} else if match(p, .LEFT_BRACE) {
+		begin_scope(p.compiler)
+		block(p)
+		end_scope(p)
 	} else {
 		expression_statement(p)
 	}
@@ -465,5 +597,14 @@ var_declaration :: proc(p: ^Parser) {
 @(private = "file")
 variable :: proc(p: ^Parser, can_assign: bool) {
 	named_variable(p, p.previous, can_assign)
+}
+
+@(private = "file")
+block :: proc(p: ^Parser) {
+	for !check(p, .RIGHT_BRACE) && !check(p, .EOF) {
+		declaration(p)
+	}
+
+	consume(p, .RIGHT_BRACE, "Expect '}' after block.")
 }
 

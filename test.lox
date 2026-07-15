@@ -1,5 +1,8 @@
-var breakfast = "beignets";
-var beverage = "cafe au lait";
-breakfast = "beignets with " + beverage;
-
-print breakfast;
+var x = "outer";
+{
+  var x = "inner";
+  print x; // Should print: inner
+  x = "updated inner";
+  print x; // Should print: updated inner
+}
+print x;   // Should print: outer

@@ -161,6 +161,12 @@ run :: proc(vm: ^VM) -> InterpretResult {
 				runtime_error(vm, "Undefined variable '%s'.", name.data)
 				return .RuntimeError
 			}
+		case .GET_LOCAL:
+			slot := read_byte(vm)
+			append(&vm.stack, vm.stack[slot])
+		case .SET_LOCAL:
+			slot := read_byte(vm)
+			vm.stack[slot] = peek(vm, 0)
 		}
 	}
 }

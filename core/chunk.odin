@@ -5,6 +5,8 @@ import "core:fmt"
 OpCode :: enum u8 {
 	SET_GLOBAL,
 	GET_GLOBAL,
+	SET_LOCAL,
+	GET_LOCAL,
 	DEFINE_GLOBAL,
 	CONSTANT,
 	NIL,
@@ -128,12 +130,16 @@ disassemble_instruction :: proc(c: ^Chunk, offset: int) -> int {
 		return constant_instruction("OP_GET_GLOBAL", c, offset)
 	case .SET_GLOBAL:
 		return constant_instruction("OP_SET_GLOBAL", c, offset)
+	case .SET_LOCAL:
+		return byte_instruction("OP_SET_LOCAL", c, offset)
+	case .GET_LOCAL:
+		return byte_instruction("OP_GET_LOCAL", c, offset)
 	}
 
 	return 0
 }
 
-@(private)
+@(private = "file")
 constant_instruction :: proc(name: string, chunk: ^Chunk, offset: int) -> int {
 	constant := chunk.code[offset + 1]
 	fmt.printf("%-16s %4d '", name, constant)
@@ -142,9 +148,16 @@ constant_instruction :: proc(name: string, chunk: ^Chunk, offset: int) -> int {
 	return offset + 2
 }
 
-@(private)
+@(private = "file")
 simple_instruction :: proc(name: string, offset: int) -> int {
 	fmt.printfln("%s", name)
 	return offset + 1
+}
+
+@(private = "file")
+byte_instruction :: proc(name: string, chunk: ^Chunk, offset: int) -> int {
+	slot := chunk.code[offset + 1]
+	fmt.printfln("%-16s %4d", name, slot)
+	return offset + 2
 }
 
