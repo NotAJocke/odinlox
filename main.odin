@@ -41,7 +41,7 @@ main :: proc() {
 		os.exit(1)
 	}
 
-	free_vm()
+	free_vm(&vm)
 }
 
 @(private)

@@ -32,7 +32,8 @@ new_vm :: proc(debug: bool) -> VM {
 	}
 }
 
-free_vm :: proc() {
+free_vm :: proc(vm: ^VM) {
+	table_free(&vm.strings)
 	obj_pool_free()
 	delete(obj_pool)
 }
