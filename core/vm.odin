@@ -167,6 +167,17 @@ run :: proc(vm: ^VM) -> InterpretResult {
 		case .SET_LOCAL:
 			slot := read_byte(vm)
 			vm.stack[slot] = peek(vm, 0)
+		case .JUMP_IF_FALSE:
+			offset := read_short(vm)
+			if is_falsey(peek(vm, 0)) {
+				vm.ip += int(offset)
+			}
+		case .JUMP:
+			offset := read_short(vm)
+			vm.ip += int(offset)
+		case .LOOP:
+			offset := read_short(vm)
+			vm.ip -= int(offset)
 		}
 	}
 }
@@ -175,6 +186,13 @@ run :: proc(vm: ^VM) -> InterpretResult {
 read_byte :: proc(vm: ^VM) -> u8 {
 	vm.ip += 1
 	return vm.chunk.code[vm.ip - 1]
+}
+
+@(private = "file")
+read_short :: proc(vm: ^VM) -> u16 {
+	vm.ip += 2
+
+	return u16((vm.chunk.code[vm.ip - 2] << 8) | vm.chunk.code[vm.ip - 1])
 }
 
 @(private)

@@ -1,8 +1,8 @@
-var x = "outer";
-{
-  var x = "inner";
-  print x; // Should print: inner
-  x = "updated inner";
-  print x; // Should print: updated inner
+// Block body.
+for (var a = 0; a < 3; a = a + 1) {
+  print a;
 }
-print x;   // Should print: outer
+// expect: 0
+// expect: 1
+// expect: 2
+

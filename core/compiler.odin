@@ -48,8 +48,8 @@ compiler_init :: proc(c: ^Compiler) {
 }
 
 @(private = "file")
-begin_scope :: proc(c: ^Compiler) {
-	c.scope_depth += 1
+begin_scope :: proc(p: ^Parser) {
+	p.compiler.scope_depth += 1
 }
 
 @(private = "file")
@@ -170,6 +170,10 @@ get_rule :: proc(type: TokenType) -> ParseRule {
 		return ParseRule{parse_string, nil, .NONE}
 	case .IDENTIFIER:
 		return ParseRule{variable, nil, .NONE}
+	case .AND:
+		return ParseRule{nil, and_, .AND}
+	case .OR:
+		return ParseRule{nil, or_, .OR}
 	case:
 		return ParseRule{nil, nil, .NONE}
 	}
@@ -447,6 +451,40 @@ resolve_local :: proc(p: ^Parser, name: ^Token) -> int {
 	return -1
 }
 
+@(private = "file")
+emit_jump :: proc(p: ^Parser, instruction: OpCodeByte) -> int {
+	emit_byte(p, instruction)
+	emit_byte(p, 0xff)
+	emit_byte(p, 0xff)
+	return len(p.chunk.code) - 2
+}
+
+@(private = "file")
+patch_jump :: proc(p: ^Parser, offset: int) {
+	jump := len(p.chunk.code) - offset - 2
+
+	u16_max := 65535
+	if jump > u16_max {
+		error(p, "Too much code to jump over.")
+	}
+
+	p.chunk.code[offset] = u8((jump >> 8) & 0xff)
+	p.chunk.code[offset + 1] = u8(jump & 0xff)
+}
+
+@(private = "file")
+emit_loop :: proc(p: ^Parser, loop_start: int) {
+	emit_byte(p, .LOOP)
+
+	offset := len(p.chunk.code) - loop_start + 2
+
+	u16_max := 65535
+	if offset > u16_max {error(p, "Loop body too large.")}
+
+	emit_byte(p, (u8(offset) >> 8) & 0xff)
+	emit_byte(p, u8(offset) & 0xff)
+}
+
 // PARSING FNS
 
 @(private = "file")
@@ -557,8 +595,14 @@ declaration :: proc(p: ^Parser) {
 statement :: proc(p: ^Parser) {
 	if match(p, .PRINT) {
 		print_statement(p)
+	} else if match(p, .FOR) {
+		for_statement(p)
+	} else if match(p, .IF) {
+		if_statement(p)
+	} else if match(p, .WHILE) {
+		while_statement(p)
 	} else if match(p, .LEFT_BRACE) {
-		begin_scope(p.compiler)
+		begin_scope(p)
 		block(p)
 		end_scope(p)
 	} else {
@@ -606,5 +650,112 @@ block :: proc(p: ^Parser) {
 	}
 
 	consume(p, .RIGHT_BRACE, "Expect '}' after block.")
+}
+
+
+@(private = "file")
+if_statement :: proc(p: ^Parser) {
+	consume(p, .LEFT_PAREN, "Expect '(' after 'if'.")
+	expression(p)
+	consume(p, .RIGHT_PAREN, "Expect ')' after condition.")
+
+	then_jmp := emit_jump(p, OpCode.JUMP_IF_FALSE)
+	emit_byte(p, .POP)
+	statement(p)
+
+	else_jump := emit_jump(p, OpCode.JUMP)
+
+	patch_jump(p, then_jmp)
+	emit_byte(p, .POP)
+
+	if match(p, .ELSE) {statement(p)}
+	patch_jump(p, else_jump)
+}
+
+@(private = "file")
+and_ :: proc(p: ^Parser, _can_assign: bool) {
+	end_jump := emit_jump(p, .JUMP_IF_FALSE)
+
+	emit_byte(p, .POP)
+	parse_precedence(p, .AND)
+
+	patch_jump(p, end_jump)
+}
+
+@(private = "file")
+or_ :: proc(p: ^Parser, _can_assign: bool) {
+	else_jump := emit_jump(p, .JUMP_IF_FALSE)
+	end_jump := emit_jump(p, .JUMP)
+
+	patch_jump(p, else_jump)
+	emit_byte(p, .POP)
+
+	parse_precedence(p, .OR)
+	patch_jump(p, end_jump)
+}
+
+@(private = "file")
+while_statement :: proc(p: ^Parser) {
+	loop_start := len(p.chunk.code)
+
+	consume(p, .LEFT_PAREN, "Expect '(' after 'while'.")
+	expression(p)
+	consume(p, .RIGHT_PAREN, "Expect ')' after condition.")
+
+	exit_jump := emit_jump(p, .JUMP_IF_FALSE)
+	emit_byte(p, .POP)
+	statement(p)
+	emit_loop(p, loop_start)
+
+	patch_jump(p, exit_jump)
+	emit_byte(p, .POP)
+}
+
+@(private = "file")
+for_statement :: proc(p: ^Parser) {
+	begin_scope(p)
+	consume(p, .LEFT_PAREN, "Expect '(' after 'for'.")
+
+	if match(p, .SEMICOLON) {
+		//No init
+	} else if match(p, .VAR) {
+		var_declaration(p)
+	} else {
+		expression_statement(p)
+	}
+
+	loop_start := len(p.chunk.code)
+	exit_jump := -1
+
+	if !match(p, .SEMICOLON) {
+		expression(p)
+		consume(p, .SEMICOLON, "Expect ';' after loop condition.")
+
+		// Jump out if condition is false
+		exit_jump = emit_jump(p, .JUMP_IF_FALSE)
+		emit_byte(p, .POP)
+	}
+
+	if !match(p, .RIGHT_PAREN) {
+		body_jump := emit_jump(p, .JUMP)
+		increment_start := len(p.chunk.code)
+		expression(p)
+		emit_byte(p, .POP)
+		consume(p, .RIGHT_PAREN, "Expect ')' after for clauses.")
+
+		emit_loop(p, loop_start)
+		loop_start = increment_start
+		patch_jump(p, body_jump)
+	}
+
+	statement(p)
+	emit_loop(p, loop_start)
+
+	if exit_jump != -1 {
+		patch_jump(p, exit_jump)
+		emit_byte(p, .POP)
+	}
+
+	end_scope(p)
 }
 

@@ -3,6 +3,9 @@ package core
 import "core:fmt"
 
 OpCode :: enum u8 {
+	LOOP,
+	JUMP,
+	JUMP_IF_FALSE,
 	SET_GLOBAL,
 	GET_GLOBAL,
 	SET_LOCAL,
@@ -134,6 +137,12 @@ disassemble_instruction :: proc(c: ^Chunk, offset: int) -> int {
 		return byte_instruction("OP_SET_LOCAL", c, offset)
 	case .GET_LOCAL:
 		return byte_instruction("OP_GET_LOCAL", c, offset)
+	case .JUMP:
+		return jump_instruction("OP_JUMP", 1, c, offset)
+	case .JUMP_IF_FALSE:
+		return jump_instruction("OP_JUMP_IF_FALSE", 1, c, offset)
+	case .LOOP:
+		return jump_instruction("OP_LOOP", -1, c, offset)
 	}
 
 	return 0
@@ -159,5 +168,14 @@ byte_instruction :: proc(name: string, chunk: ^Chunk, offset: int) -> int {
 	slot := chunk.code[offset + 1]
 	fmt.printfln("%-16s %4d", name, slot)
 	return offset + 2
+}
+
+@(private = "file")
+jump_instruction :: proc(name: string, sign: int, chunk: ^Chunk, offset: int) -> int {
+	jump := u16(chunk.code[offset + 1] << 8)
+	jump |= u16(chunk.code[offset + 2])
+	fmt.printfln("%-16s %4d -> %d", name, offset, offset + 3 + sign * int(jump))
+
+	return offset + 3
 }
 
